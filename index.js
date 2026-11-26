@@ -409,7 +409,7 @@
   // Display the initial scene.
   switchScene(scenes[0]);
 
-	// =========================================================================
+// =========================================================================
 	// SCREENSAVER MODUS (?screensaver=random OF ?screensaver=scenario)
 	// =========================================================================
 	var urlParams = new URLSearchParams(window.location.search);
@@ -418,49 +418,89 @@
 	if (screensaverMode === 'scenario' || screensaverMode === 'random') {
 		document.body.classList.add('screensaver-mode');
 
-		var huidigeSceneObj = scenes[0];
-		var vorigeSceneId = null;
-
-		// OPTIE 1: VAST SCENARIO (voorbeeld voor Reduit; voor Poterne vervang je de ID's uit data.js)
+		// OPTIE 1: VAST SCENARIO
+		// Laat deze lijst leeg ([]) om automatisch ALLE scènes uit data.js op volgorde af te spelen.
+		// Of vul zelf specifieke scènes in voor een eigen route.
 		var vastScenario = [
-			{ id: '0-reduit_brug',        yaw: 0.05,  pitch: 0.05, pauzeMs: 5000 },
-			{ id: '1-reduit_linksom-1',   yaw: -0.11, pitch: 0.10, pauzeMs: 5000 },
-			{ id: '2-reduit_linksom-2',   yaw: 0.14,  pitch: 0.10, pauzeMs: 5000 },
-			{ id: '3-reduit_linksom-3',   yaw: 0.43,  pitch: 0.05, pauzeMs: 6000 },
-			{ id: '10-reduit_linksom-10', yaw: 0.15,  pitch: 0.10, pauzeMs: 5000 }
+			// Voorbeeld:
+			// { id: '0-reduit_brug', yaw: 0.05, pitch: 0.05, pauzeMs: 5000 }
 		];
-		var scenarioIndex = 0;
+
+		var huidigeSceneObj = scenes[0];
+		var scenarioIndex = (vastScenario.length === 0 && scenes.length > 1) ? 1 : 0;
+
+		// Geheugen voor random-modus: onthoudt de laatste 6 bezochte ruimtes
+		var recentBezocht = [];
+		var maxGeheugen = 6;
+
+		// In random-modus: begin direct op een willekeurige foto i.p.v. altijd foto 0
+		if (screensaverMode === 'random' && scenes.length > 1) {
+			huidigeSceneObj = scenes[Math.floor(Math.random() * scenes.length)];
+			switchScene(huidigeSceneObj);
+		}
 
 		function volgendeStap() {
 			if (screensaverMode === 'scenario') {
-				var stap = vastScenario[scenarioIndex];
-				var doelScene = findSceneById(stap.id);
-				scenarioIndex = (scenarioIndex + 1) % vastScenario.length;
+				var doelScene = null;
+				var targetYaw = 0;
+				var targetPitch = 0;
+				var pauzeMs = 5000;
+
+				if (vastScenario.length > 0) {
+					var stap = vastScenario[scenarioIndex];
+					doelScene = findSceneById(stap.id);
+					targetYaw = stap.yaw;
+					targetPitch = stap.pitch;
+					pauzeMs = stap.pauzeMs || 5000;
+					scenarioIndex = (scenarioIndex + 1) % vastScenario.length;
+				} else {
+					// Automatisch alle scènes uit data.js op volgorde aflopen
+					doelScene = scenes[scenarioIndex];
+					targetYaw = doelScene.data.initialViewParameters.yaw;
+					targetPitch = doelScene.data.initialViewParameters.pitch;
+					scenarioIndex = (scenarioIndex + 1) % scenes.length;
+				}
 
 				if (doelScene) {
 					switchScene(doelScene);
 					huidigeSceneObj = doelScene;
 					doelScene.scene.lookTo(
-						{ yaw: stap.yaw, pitch: stap.pitch },
+						{ yaw: targetYaw, pitch: targetPitch },
 						{ transitionDuration: 3000 }
 					);
 				}
-				setTimeout(volgendeStap, stap.pauzeMs);
+				setTimeout(volgendeStap, pauzeMs);
 
 			} else if (screensaverMode === 'random') {
 				var huidigeId = huidigeSceneObj.data.id;
 				var hotspots = huidigeSceneObj.data.linkHotspots || [];
 
-				// Negeer foutieve zelf-links (zoals 53 -> 53)
+				// Voeg huidige ruimte toe aan het geheugen
+				recentBezocht.push(huidigeId);
+				if (recentBezocht.length > maxGeheugen) {
+					recentBezocht.shift();
+				}
+
+				// 1. Negeer foutieve zelf-links (zoals 53 -> 53)
 				var geldigeHotspots = hotspots.filter(function (h) {
 					return h.target !== huidigeId && findSceneById(h.target);
 				});
 				if (geldigeHotspots.length === 0) return;
 
-				// Voorkom pingpongen: sla de ruimte waar we net vandaan kwamen over (tenzij doodlopend)
+				// 2. Kies bij voorkeur een ruimte die NIET in de laatste 6 bezochte zit
 				var opties = geldigeHotspots.filter(function (h) {
-					return h.target !== vorigeSceneId;
+					return recentBezocht.indexOf(h.target) === -1;
 				});
+
+				// 3. Als alle buren recent bezocht zijn, sluit dan alleen de directe voorganger uit
+				if (opties.length === 0 && recentBezocht.length >= 2) {
+					var directeVorige = recentBezocht[recentBezocht.length - 2];
+					opties = geldigeHotspots.filter(function (h) {
+						return h.target !== directeVorige;
+					});
+				}
+
+				// 4. Doodlopend eind? Dan mag hij omkeren
 				if (opties.length === 0) {
 					opties = geldigeHotspots;
 				}
@@ -468,17 +508,14 @@
 				var gekozen = opties[Math.floor(Math.random() * opties.length)];
 				var volgendeScene = findSceneById(gekozen.target);
 
-				// 1. Draai rustig (2,5 sec) naar de gekozen doorgang
+				// Draai rustig (2,5 sec) naar de gekozen doorgang en stap daarna binnen
 				huidigeSceneObj.scene.lookTo(
 					{ yaw: gekozen.yaw, pitch: 0.05 },
 					{ transitionDuration: 2500 },
 					function () {
-						// 2. Wacht 1,5 sec en stap de volgende ruimte binnen
 						setTimeout(function () {
-							vorigeSceneId = huidigeId;
 							switchScene(volgendeScene);
 							huidigeSceneObj = volgendeScene;
-							// 3. Wacht 4 sec in de nieuwe ruimte voor de volgende keuze
 							setTimeout(volgendeStap, 4000);
 						}, 1500);
 					}
