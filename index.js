@@ -409,4 +409,85 @@
   // Display the initial scene.
   switchScene(scenes[0]);
 
+	// =========================================================================
+	// SCREENSAVER MODUS (?screensaver=random OF ?screensaver=scenario)
+	// =========================================================================
+	var urlParams = new URLSearchParams(window.location.search);
+	var screensaverMode = urlParams.get('screensaver');
+
+	if (screensaverMode === 'scenario' || screensaverMode === 'random') {
+		document.body.classList.add('screensaver-mode');
+
+		var huidigeSceneObj = scenes[0];
+		var vorigeSceneId = null;
+
+		// OPTIE 1: VAST SCENARIO (voorbeeld voor Reduit; voor Poterne vervang je de ID's uit data.js)
+		var vastScenario = [
+			{ id: '0-reduit_brug',        yaw: 0.05,  pitch: 0.05, pauzeMs: 5000 },
+			{ id: '1-reduit_linksom-1',   yaw: -0.11, pitch: 0.10, pauzeMs: 5000 },
+			{ id: '2-reduit_linksom-2',   yaw: 0.14,  pitch: 0.10, pauzeMs: 5000 },
+			{ id: '3-reduit_linksom-3',   yaw: 0.43,  pitch: 0.05, pauzeMs: 6000 },
+			{ id: '10-reduit_linksom-10', yaw: 0.15,  pitch: 0.10, pauzeMs: 5000 }
+		];
+		var scenarioIndex = 0;
+
+		function volgendeStap() {
+			if (screensaverMode === 'scenario') {
+				var stap = vastScenario[scenarioIndex];
+				var doelScene = findSceneById(stap.id);
+				scenarioIndex = (scenarioIndex + 1) % vastScenario.length;
+
+				if (doelScene) {
+					switchScene(doelScene);
+					huidigeSceneObj = doelScene;
+					doelScene.scene.lookTo(
+						{ yaw: stap.yaw, pitch: stap.pitch },
+						{ transitionDuration: 3000 }
+					);
+				}
+				setTimeout(volgendeStap, stap.pauzeMs);
+
+			} else if (screensaverMode === 'random') {
+				var huidigeId = huidigeSceneObj.data.id;
+				var hotspots = huidigeSceneObj.data.linkHotspots || [];
+
+				// Negeer foutieve zelf-links (zoals 53 -> 53)
+				var geldigeHotspots = hotspots.filter(function (h) {
+					return h.target !== huidigeId && findSceneById(h.target);
+				});
+				if (geldigeHotspots.length === 0) return;
+
+				// Voorkom pingpongen: sla de ruimte waar we net vandaan kwamen over (tenzij doodlopend)
+				var opties = geldigeHotspots.filter(function (h) {
+					return h.target !== vorigeSceneId;
+				});
+				if (opties.length === 0) {
+					opties = geldigeHotspots;
+				}
+
+				var gekozen = opties[Math.floor(Math.random() * opties.length)];
+				var volgendeScene = findSceneById(gekozen.target);
+
+				// 1. Draai rustig (2,5 sec) naar de gekozen doorgang
+				huidigeSceneObj.scene.lookTo(
+					{ yaw: gekozen.yaw, pitch: 0.05 },
+					{ transitionDuration: 2500 },
+					function () {
+						// 2. Wacht 1,5 sec en stap de volgende ruimte binnen
+						setTimeout(function () {
+							vorigeSceneId = huidigeId;
+							switchScene(volgendeScene);
+							huidigeSceneObj = volgendeScene;
+							// 3. Wacht 4 sec in de nieuwe ruimte voor de volgende keuze
+							setTimeout(volgendeStap, 4000);
+						}, 1500);
+					}
+				);
+			}
+		}
+
+		// Start 3 seconden na het openen van de pagina
+		setTimeout(volgendeStap, 3000);
+	}
+
 })();
