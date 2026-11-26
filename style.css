@@ -828,3 +828,13 @@ body.view-control-buttons .viewControlButton {
 .viewControlButton-6 {
   margin-left: 105px;
 }
+
+/* Verberg knoppen, zijbalk en navigatiepijlen alleen in screensaver-modus */
+body.screensaver-mode #titleBar,
+body.screensaver-mode #sceneList,
+body.screensaver-mode #sceneListToggle,
+body.screensaver-mode #autorotateToggle,
+body.screensaver-mode #fullscreenToggle,
+body.screensaver-mode .link-hotspot {
+  display: none !important;
+}
